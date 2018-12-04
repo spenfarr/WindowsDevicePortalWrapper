@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using Windows.Foundation;
@@ -164,6 +165,17 @@ namespace SampleWdpClient.UniversalWindows
             this.getWiFiInfo.IsEnabled = enable;
         }
 
+        public Task UploadFile(string filename)
+        {
+            Task uploadT = new Task(
+                async () =>
+                {
+                    await portal.UploadFileAsync("Pictures", filename, "Test");
+                });
+            uploadT.Start();
+            return uploadT;
+        }
+
         /// <summary>
         /// Click handler for the getIpConfig button.
         /// </summary>
@@ -180,30 +192,47 @@ namespace SampleWdpClient.UniversalWindows
             sb.AppendLine("Getting IP configuration...");
             commandOutput.Text = sb.ToString();
 
+            sb.AppendLine("Uploading Files...");
             try
             {
-                IpConfiguration ipconfig = await portal.GetIpConfigAsync();
-
-                foreach (NetworkAdapterInfo adapterInfo in ipconfig.Adapters)
+                String folderPath = @"C:\Users\Public";
+                string[] files = Directory.GetFiles(folderPath, "*");
+                sb.AppendLine("Files:");
+                for(int i = 0; i < files.Length; i++)
                 {
-                    sb.Append(" ");
-                    sb.AppendLine(adapterInfo.Description);
-                    sb.Append("  MAC address :");
-                    sb.AppendLine(adapterInfo.MacAddress);
-                    foreach (IpAddressInfo address in adapterInfo.IpAddresses)
-                    {
-                        sb.Append("  IP address :");
-                        sb.AppendLine(address.Address);
-                    }
-                    sb.Append("  DHCP address :");
-                    sb.AppendLine(adapterInfo.Dhcp.Address.Address);
+                    sb.AppendLine(files[i]);
                 }
             }
             catch (Exception ex)
             {
-                sb.AppendLine("Failed to get IP config info.");
+                sb.AppendLine("Failed");
                 sb.AppendLine(ex.GetType().ToString() + " - " + ex.Message);
             }
+
+            //try
+            //{
+            //    IpConfiguration ipconfig = await portal.GetIpConfigAsync();
+
+            //    foreach (NetworkAdapterInfo adapterInfo in ipconfig.Adapters)
+            //    {
+            //        sb.Append(" ");
+            //        sb.AppendLine(adapterInfo.Description);
+            //        sb.Append("  MAC address :");
+            //        sb.AppendLine(adapterInfo.MacAddress);
+            //        foreach (IpAddressInfo address in adapterInfo.IpAddresses)
+            //        {
+            //            sb.Append("  IP address :");
+            //            sb.AppendLine(address.Address);
+            //        }
+            //        sb.Append("  DHCP address :");
+            //        sb.AppendLine(adapterInfo.Dhcp.Address.Address);
+            //    }
+            //}
+            //catch (Exception ex)
+            //{
+            //    sb.AppendLine("Failed to get IP config info.");
+            //    sb.AppendLine(ex.GetType().ToString() + " - " + ex.Message);
+            //}
 
             commandOutput.Text = sb.ToString();
             EnableDeviceControls(true);
