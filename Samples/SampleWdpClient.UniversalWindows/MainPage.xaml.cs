@@ -189,50 +189,29 @@ namespace SampleWdpClient.UniversalWindows
 
             StringBuilder sb = new StringBuilder();
             sb.Append(commandOutput.Text);
-            sb.AppendLine("Getting IP configuration...");
-            commandOutput.Text = sb.ToString();
-
             sb.AppendLine("Uploading Files...");
+            commandOutput.Text = sb.ToString();
+    
             try
             {
-                String folderPath = @"C:\Users\Public";
+                string folderPath = Directory.GetCurrentDirectory();// @"C:\Windows";
                 string[] files = Directory.GetFiles(folderPath, "*");
-                sb.AppendLine("Files:");
-                for(int i = 0; i < files.Length; i++)
-                {
-                    sb.AppendLine(files[i]);
-                }
+                //string exists = await Task.Run(() => Directory.Exists(folderPath).ToString());
+                //sb.AppendLine(exists);
+                sb.AppendLine(Directory.GetCurrentDirectory());
+                sb.AppendLine(files[0]);
+                await UploadFile(files[0]);
+                //for(int i = 0; i < files.Length; i++)
+                //{
+                //    sb.AppendLine(files[i]);
+                //    await UploadFile(files[0]);
+                //}
             }
             catch (Exception ex)
             {
                 sb.AppendLine("Failed");
                 sb.AppendLine(ex.GetType().ToString() + " - " + ex.Message);
             }
-
-            //try
-            //{
-            //    IpConfiguration ipconfig = await portal.GetIpConfigAsync();
-
-            //    foreach (NetworkAdapterInfo adapterInfo in ipconfig.Adapters)
-            //    {
-            //        sb.Append(" ");
-            //        sb.AppendLine(adapterInfo.Description);
-            //        sb.Append("  MAC address :");
-            //        sb.AppendLine(adapterInfo.MacAddress);
-            //        foreach (IpAddressInfo address in adapterInfo.IpAddresses)
-            //        {
-            //            sb.Append("  IP address :");
-            //            sb.AppendLine(address.Address);
-            //        }
-            //        sb.Append("  DHCP address :");
-            //        sb.AppendLine(adapterInfo.Dhcp.Address.Address);
-            //    }
-            //}
-            //catch (Exception ex)
-            //{
-            //    sb.AppendLine("Failed to get IP config info.");
-            //    sb.AppendLine(ex.GetType().ToString() + " - " + ex.Message);
-            //}
 
             commandOutput.Text = sb.ToString();
             EnableDeviceControls(true);
