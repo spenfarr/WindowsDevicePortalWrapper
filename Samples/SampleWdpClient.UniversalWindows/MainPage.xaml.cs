@@ -1,16 +1,14 @@
-﻿using System;
-using System.IO;
+﻿using Microsoft.Tools.WindowsDevicePortal;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Windows.Foundation;
 using Windows.Security.Cryptography.Certificates;
 using Windows.Storage;
 using Windows.Storage.Pickers;
-using Windows.Storage.Streams;
-using Windows.UI.Core;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using Microsoft.Tools.WindowsDevicePortal;
 using static Microsoft.Tools.WindowsDevicePortal.DevicePortal;
 
 namespace SampleWdpClient.UniversalWindows
@@ -24,8 +22,8 @@ namespace SampleWdpClient.UniversalWindows
         /// The device portal to which we are connecting.
         /// </summary>
         private DevicePortal portal;
-
         private Certificate certificate;
+        private StorageFolder UploadSourceFolder;
 
         /// <summary>
         /// The main page constructor.
@@ -34,6 +32,7 @@ namespace SampleWdpClient.UniversalWindows
         {
             this.InitializeComponent();
             this.EnableDeviceControls(false);
+            this.address.Text = "https://";
         }
 
         /// <summary>
@@ -70,7 +69,8 @@ namespace SampleWdpClient.UniversalWindows
 
             this.ClearOutput();
 
-            bool allowUntrusted = this.allowUntrustedCheckbox.IsChecked.Value;
+            //bool allowUntrusted = this.allowUntrustedCheckbox.IsChecked.Value;
+            bool allowUntrusted = true;
 
             portal = new DevicePortal(
                 new DefaultDevicePortalConnection(
@@ -160,17 +160,35 @@ namespace SampleWdpClient.UniversalWindows
         {
             this.rebootDevice.IsEnabled = enable;
             this.shutdownDevice.IsEnabled = enable;
-
-            this.getIPConfig.IsEnabled = enable;
-            this.getWiFiInfo.IsEnabled = enable;
+            this.ClearScans.IsEnabled = enable;
+            this.getDirectory.IsEnabled = enable;
+            this.UploadScans.IsEnabled = enable && this.UploadSourceFolder != null;
         }
 
-        public Task UploadFile(string filename)
+        public async Task ClearSurgeryDirectory()
         {
+            FolderContents subFolders = await portal.GetFolderContentsAsync("Pictures", "Surgery");
+            foreach (var item in subFolders.Contents)
+            {
+                if (item.IsFolder)
+                {
+                    string subPath = "Surgery/" + item.Name;
+                    FolderContents images = await portal.GetFolderContentsAsync("Pictures", subPath);
+                    foreach (var image in images.Contents)
+                    {
+                        await portal.DeleteFileAsync("Pictures", image.Name, subPath);
+                    }
+                }
+            }
+        }
+
+        public Task UploadFile(string filename, string targetDirectory)
+        {
+            string targetFolder = "Surgery/" + targetDirectory;
             Task uploadT = new Task(
                 async () =>
                 {
-                    await portal.UploadFileAsync("Pictures", filename, "Test");
+                    await portal.UploadFileAsync("Pictures", filename, targetFolder);
                 });
             uploadT.Start();
             return uploadT;
@@ -181,7 +199,7 @@ namespace SampleWdpClient.UniversalWindows
         /// </summary>
         /// <param name="sender">The caller of this method.</param>
         /// <param name="e">The arguments associated with this event.</param>
-        private async void GetIPConfig_Click(object sender, RoutedEventArgs e)
+        private async void UploadScans_Click(object sender, RoutedEventArgs e)
         {
             this.ClearOutput();
             this.EnableConnectionControls(false);
@@ -194,18 +212,35 @@ namespace SampleWdpClient.UniversalWindows
     
             try
             {
-                string folderPath = Directory.GetCurrentDirectory();// @"C:\Windows";
-                string[] files = Directory.GetFiles(folderPath, "*");
-                //string exists = await Task.Run(() => Directory.Exists(folderPath).ToString());
-                //sb.AppendLine(exists);
-                sb.AppendLine(Directory.GetCurrentDirectory());
-                sb.AppendLine(files[0]);
-                await UploadFile(files[0]);
-                //for(int i = 0; i < files.Length; i++)
-                //{
-                //    sb.AppendLine(files[i]);
-                //    await UploadFile(files[0]);
-                //}
+                var subFolders = await UploadSourceFolder.GetFoldersAsync();
+                var hololensSurgeryDirs = await portal.GetFolderContentsAsync("Pictures", "Surgery");
+                var dirNames = hololensSurgeryDirs.Contents
+                    .Where(item => item.IsFolder)
+                    .Select(folder => folder.Name)
+                    .ToList();
+
+                foreach (StorageFolder subFolder in subFolders)
+                {
+                    string targetDir = subFolder.Name;
+                    if (!dirNames.Contains(targetDir))
+                    {
+                        sb.AppendLine("Folder " + targetDir + " not found on hololens, skipping...");
+                        continue;
+                    }
+                    var images = await subFolder.GetFilesAsync();
+                    foreach (StorageFile image in images)
+                    {
+                        var goodFileTypes = new List<string>(){ "jpg", "jpeg", "png" };
+                        var imageNameSplit = image.Name.Split('.');
+                        if (!goodFileTypes.Contains(imageNameSplit.Last()))
+                        {
+                            sb.AppendLine("File " + image.Name + " does not have correct file type, skipping...");
+                            continue;
+                        }
+                        string filePath = image.Path;
+                        await UploadFile(filePath, targetDir);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -213,68 +248,13 @@ namespace SampleWdpClient.UniversalWindows
                 sb.AppendLine(ex.GetType().ToString() + " - " + ex.Message);
             }
 
-            commandOutput.Text = sb.ToString();
-            EnableDeviceControls(true);
-            EnableConnectionControls(true);
-        }
-
-        /// <summary>
-        /// Click handler for the getWifiInfo button.
-        /// </summary>
-        /// <param name="sender">The caller of this method.</param>
-        /// <param name="e">The arguments associated with this event.</param>
-        private async void GetWifiInfo_Click(object sender, RoutedEventArgs e)
-        {
-            this.ClearOutput();
-            this.EnableConnectionControls(false);
-            this.EnableDeviceControls(false);
-
-            StringBuilder sb = new StringBuilder();
-
-            sb.Append(commandOutput.Text);
-            sb.AppendLine("Getting WiFi interfaces and networks...");
-            commandOutput.Text = sb.ToString();
-
-            try
-            {
-                WifiInterfaces wifiInterfaces = await portal.GetWifiInterfacesAsync();
-                sb.AppendLine("WiFi Interfaces:");
-                foreach (WifiInterface wifiInterface in wifiInterfaces.Interfaces)
-                {
-                    sb.Append(" ");
-                    sb.AppendLine(wifiInterface.Description);
-                    sb.Append("  GUID: ");
-                    sb.AppendLine(wifiInterface.Guid.ToString());
-
-                    WifiNetworks wifiNetworks = await portal.GetWifiNetworksAsync(wifiInterface.Guid);
-                    sb.AppendLine("  Networks:");
-                    foreach (WifiNetworkInfo network in wifiNetworks.AvailableNetworks)
-                    {
-                        sb.Append("   SSID: ");
-                        sb.AppendLine(network.Ssid);
-                        sb.Append("   Profile name: ");
-                        sb.AppendLine(network.ProfileName);
-                        sb.Append("   is connected: ");
-                        sb.AppendLine(network.IsConnected.ToString());
-                        sb.Append("   Channel: ");
-                        sb.AppendLine(network.Channel.ToString());
-                        sb.Append("   Authentication algorithm: ");
-                        sb.AppendLine(network.AuthenticationAlgorithm);
-                        sb.Append("   Signal quality: ");
-                        sb.AppendLine(network.SignalQuality.ToString());
-                    }
-                };
-            }
-            catch (Exception ex)
-            {
-                sb.AppendLine("Failed to get WiFi info.");
-                sb.AppendLine(ex.GetType().ToString() + " - " + ex.Message);
-            }
+            sb.AppendLine("Done uploading Files...");
 
             commandOutput.Text = sb.ToString();
             EnableDeviceControls(true);
             EnableConnectionControls(true);
         }
+
 
         /// <summary>
         /// PasswordChanged handler for the password text box.
@@ -369,39 +349,51 @@ namespace SampleWdpClient.UniversalWindows
         /// </summary>
         /// <param name="sender">The caller of this method.</param>
         /// <param name="e">The arguments associated with this event.</param>
-        private async void LoadCertificate_Click(object sender, RoutedEventArgs e)
+        private async void GetDirectory_Click(object sender, RoutedEventArgs e)
         {
-            await LoadCertificate();
+            await GetUploadSourceFolder();
+            EnableDeviceControls(true);
         }
 
-        /// <summary>
-        /// Loads a certificates asynchronously (runs on the UI thread).
-        /// </summary>
-        /// <returns></returns>
-        private async Task LoadCertificate()
+        private async Task GetUploadSourceFolder()
         {
-            try
+            var folderPicker = new FolderPicker();
+            folderPicker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Desktop;
+            folderPicker.FileTypeFilter.Add("*");
+
+            UploadSourceFolder = await folderPicker.PickSingleFolderAsync();
+            if (UploadSourceFolder != null)
             {
-                FileOpenPicker filePicker = new FileOpenPicker();
-                filePicker.SuggestedStartLocation = PickerLocationId.Downloads;
-                filePicker.FileTypeFilter.Add(".cer");
-
-                StorageFile file = await filePicker.PickSingleFileAsync();
-
-                if (file != null)
-                {
-                    IBuffer cerBlob = await FileIO.ReadBufferAsync(file);
-
-                    if (cerBlob != null)
-                    {
-                        certificate = new Certificate(cerBlob);
-                    }
-                }
-            }
-            catch (Exception exception)
-            {
-                this.commandOutput.Text = "Failed to get cert file: " + exception.Message;
+                // Application now has read/write access to all contents in the picked folder
+                // (including other sub-folder contents)
+                Windows.Storage.AccessCache.StorageApplicationPermissions.
+                FutureAccessList.AddOrReplace("PickedFolderToken", UploadSourceFolder);
+                commandOutput.Text = UploadSourceFolder.Name;
             }
         }
+
+
+        private async void ClearScans_Click(object sender, RoutedEventArgs e)
+        {
+            this.ClearOutput();
+            this.EnableConnectionControls(false);
+            this.EnableDeviceControls(false);
+
+            StringBuilder sb = new StringBuilder();
+
+            sb.Append(commandOutput.Text);
+            sb.AppendLine("Clearing surgery directory on Hololens...");
+            commandOutput.Text = sb.ToString();
+
+            await ClearSurgeryDirectory();
+
+            sb.AppendLine("Done clearing surgery directory");
+
+            commandOutput.Text = sb.ToString();
+            EnableDeviceControls(true);
+            EnableConnectionControls(true);
+        }
+
+        
     }
 }
